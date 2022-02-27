@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "me.declipsonator.recipeunlocker.recipeunlocker.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "ClientPlayerInteractionManagerMixin",
+    "ClientPlayNetworkHandlerMixin",
+    "RecipeBookWidgetMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
