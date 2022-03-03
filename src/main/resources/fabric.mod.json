@@ -11,7 +11,7 @@
   "environment": "client",
   "entrypoints": {
     "main": [
-      "me.declipsonator.recipeunlocker.recipeunlocker.RecipeUnlocker"
+      "me.declipsonator.recipeunlocker.RecipeUnlocker"
     ]
   },
   "mixins": [
@@ -19,6 +19,6 @@
   ],
   "depends": {
     "java": ">=16",
-    "minecraft": ">=1.18.2"
+    "minecraft": ">=1.18"
   }
 }
