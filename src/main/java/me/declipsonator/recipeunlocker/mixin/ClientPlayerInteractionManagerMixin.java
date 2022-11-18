@@ -2,14 +2,11 @@ package me.declipsonator.recipeunlocker.mixin;
 
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
-import it.unimi.dsi.fastutil.ints.IntListIterator;
 import me.declipsonator.recipeunlocker.RecipeUnlocker;
 import me.declipsonator.recipeunlocker.util.GhostSlotClear;
 import me.declipsonator.recipeunlocker.util.RecipeBookRecipes;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.CraftingScreen;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import net.minecraft.client.gui.screen.ingame.*;
 import net.minecraft.client.gui.screen.recipebook.RecipeBookWidget;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
 import net.minecraft.item.ItemStack;
@@ -39,8 +36,14 @@ public class ClientPlayerInteractionManagerMixin {
 		RecipeBookWidget widget = null;
 		if (handledScreen instanceof InventoryScreen playerScreen) {
 			widget = playerScreen.getRecipeBookWidget();
-		} else if (handledScreen instanceof CraftingScreen craftingScreen) {
+		} else if(handledScreen instanceof CraftingScreen craftingScreen) {
 			widget = craftingScreen.getRecipeBookWidget();
+		} else if(handledScreen instanceof FurnaceScreen furnaceScreen) {
+			widget = furnaceScreen.getRecipeBookWidget();
+		} else if(handledScreen instanceof SmokerScreen smokerScreen) {
+			widget = smokerScreen.getRecipeBookWidget();
+		} else if(handledScreen instanceof BlastFurnaceScreen blastFurnaceScreen) {
+			widget = blastFurnaceScreen.getRecipeBookWidget();
 		}
 
 
@@ -82,7 +85,7 @@ public class ClientPlayerInteractionManagerMixin {
 	private void fillInputSlots(final Recipe<?> recipe, final boolean craftAll) {
 		 RecipeMatcher matcher = new RecipeMatcher();
 		AbstractRecipeScreenHandler<?> handler = RecipeUnlocker.mc.player.playerScreenHandler;
-		int i = matcher.countCrafts(recipe, (IntList)null);
+		int i = matcher.countCrafts(recipe, null);
 		int j;
 		for(j = 0; j < handler.getCraftingHeight() * handler.getCraftingWidth() + 1; ++j) {
 			if (j != handler.getCraftingResultSlotIndex()) {
@@ -97,15 +100,13 @@ public class ClientPlayerInteractionManagerMixin {
 		IntList itemStack = new IntArrayList();
 		if (matcher.match(recipe, itemStack, j)) {
 			int k = j;
-			IntListIterator var8 = itemStack.iterator();
 
-			while(var8.hasNext()) {
-				int l = (Integer)var8.next();
-				int m = RecipeMatcher.getStackFromId(l).getMaxCount();
-				if (m < k) {
-					k = m;
-				}
-			}
+            for (int l : itemStack) {
+                int m = RecipeMatcher.getStackFromId(l).getMaxCount();
+                if (m < k) {
+                    k = m;
+                }
+            }
 
 			if (matcher.match(recipe, itemStack, k)) {
 				returnInputs(false);
@@ -155,9 +156,8 @@ public class ClientPlayerInteractionManagerMixin {
 	private void alignRecipeToGrid(int gridWidth, int gridHeight, int gridOutputSlot, Recipe<?> recipe, Iterator<?> inputs, int amount) {
 		int i = gridWidth;
 		int j = gridHeight;
-		if (recipe instanceof ShapedRecipe) {
-			ShapedRecipe shapedRecipe = (ShapedRecipe)recipe;
-			i = shapedRecipe.getWidth();
+		if (recipe instanceof ShapedRecipe shapedRecipe) {
+            i = shapedRecipe.getWidth();
 			j = shapedRecipe.getHeight();
 		}
 
