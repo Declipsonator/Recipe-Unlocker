@@ -1,38 +1,38 @@
 package me.declipsonator.recipeunlocker.mixin;
 
+import com.google.common.collect.Lists;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
-import it.unimi.dsi.fastutil.ints.IntList;
 import me.declipsonator.recipeunlocker.RecipeUnlocker;
-import me.declipsonator.recipeunlocker.util.GhostSlotClear;
 import me.declipsonator.recipeunlocker.util.RecipeBookRecipes;
-import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.*;
 import net.minecraft.client.gui.screen.recipebook.RecipeBookWidget;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.recipe.Ingredient;
 import net.minecraft.recipe.Recipe;
+import net.minecraft.recipe.RecipeGridAligner;
 import net.minecraft.recipe.RecipeMatcher;
-import net.minecraft.recipe.ShapedRecipe;
 import net.minecraft.screen.AbstractRecipeScreenHandler;
 import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.math.MathHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 
 @Mixin(ClientPlayerInteractionManager.class)
-public class ClientPlayerInteractionManagerMixin {
+public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements RecipeGridAligner<Integer> {
+	PlayerInventory inventory;
+	AbstractRecipeScreenHandler<C> handler;
+	RecipeMatcher matcher = new RecipeMatcher();
 	
-
 	@Inject(method = "clickRecipe", at = @At("HEAD"), cancellable = true)
 	public void clickedRecipe(int syncId, Recipe<?> recipe, boolean craftAll, CallbackInfo cir) {
-
 		if(!(RecipeUnlocker.mc.currentScreen instanceof HandledScreen<?> handledScreen && RecipeBookRecipes.isCached(recipe) && RecipeUnlocker.mc.player != null)) return;
-
 		RecipeBookWidget widget = null;
 		if (handledScreen instanceof InventoryScreen playerScreen) {
 			widget = playerScreen.getRecipeBookWidget();
@@ -45,35 +45,30 @@ public class ClientPlayerInteractionManagerMixin {
 		} else if(handledScreen instanceof BlastFurnaceScreen blastFurnaceScreen) {
 			widget = blastFurnaceScreen.getRecipeBookWidget();
 		}
+		if(widget == null) return;
+		widget.reset();
 
+		ClientPlayerEntity entity = RecipeUnlocker.mc.player;
 
-		((GhostSlotClear) widget).clearGhostSlots();
+		handler = (AbstractRecipeScreenHandler<C>) RecipeUnlocker.mc.player.currentScreenHandler;
+		inventory = entity.getInventory();
+		handler.clearCraftingSlots();
 
-		boolean canCraft = true;
-		for(Ingredient ingredient: recipe.getIngredients()) {
-			boolean ingredientGood = false;
-			for(ItemStack itemStack: ingredient.getMatchingStacks()) {
-				int numOfIngredients = 0;
-				for(int i = 0; i < 36; i++) {
-					if (RecipeUnlocker.mc.player.getInventory().getStack(i) == itemStack) numOfIngredients += RecipeUnlocker.mc.player.getInventory().getStack(i).getCount();
-				}
-				if(ingredient.getMatchingStacks()[0].getCount() <= numOfIngredients) {
-					ingredientGood = true;
-					break;
-				}
-			}
-
-			if(!ingredientGood) {
-				canCraft = false;
-				break;
-			}
+		if (!canReturnInputs() && !entity.isCreative()) {
+			return;
 		}
+		matcher.clear();
+		entity.getInventory().populateRecipeFinder(matcher);
+		handler.populateRecipeFinder(matcher);
+		if (matcher.match(recipe, null)) {
+			fillInputSlots((Recipe<C>) recipe, craftAll);
 
+		} else {
+			returnInputs();
+			widget.showGhostRecipe(recipe, RecipeUnlocker.mc.player.currentScreenHandler.slots);
 
-		if(!canCraft) widget.showGhostRecipe(recipe, RecipeUnlocker.mc.player.currentScreenHandler.slots);
-		else {
-			fillInputSlots(recipe, Screen.hasShiftDown());
 		}
+		entity.getInventory().markDirty();
 
 		cir.cancel();
 	}
@@ -82,158 +77,129 @@ public class ClientPlayerInteractionManagerMixin {
 		The code below was pretty much copied from the server side
 		I couldn't interface with it by just referencing it or smth so I just pasted
 	 */
-	private void fillInputSlots(final Recipe<?> recipe, final boolean craftAll) {
-		 RecipeMatcher matcher = new RecipeMatcher();
-		AbstractRecipeScreenHandler<?> handler = RecipeUnlocker.mc.player.playerScreenHandler;
-		int i = matcher.countCrafts(recipe, null);
-		int j;
-		for(j = 0; j < handler.getCraftingHeight() * handler.getCraftingWidth() + 1; ++j) {
-			if (j != handler.getCraftingResultSlotIndex()) {
-				ItemStack itemStack = handler.getSlot(j).getStack();
-				if (!itemStack.isEmpty() && Math.min(i, itemStack.getMaxCount()) < itemStack.getCount() + 1) {
-					return;
-				}
-			}
+	
+
+	protected void returnInputs() {
+		for (int i = 0; i < handler.getCraftingSlotCount(); ++i) {
+			if (!handler.canInsertIntoSlot(i)) continue;
+			ItemStack itemStack = handler.getSlot(i).getStack().copy();
+			inventory.offer(itemStack, false);
+			handler.getSlot(i).setStack(itemStack);
 		}
-
-		j = getAmountToFill(craftAll, i, true);
-		IntList itemStack = new IntArrayList();
-		if (matcher.match(recipe, itemStack, j)) {
-			int k = j;
-
-            for (int l : itemStack) {
-                int m = RecipeMatcher.getStackFromId(l).getMaxCount();
-                if (m < k) {
-                    k = m;
-                }
-            }
-
-			if (matcher.match(recipe, itemStack, k)) {
-				returnInputs(false);
-				alignRecipeToGrid(handler.getCraftingWidth(), handler.getCraftingHeight(), handler.getCraftingResultSlotIndex(), recipe, itemStack.iterator(), k);
-			}
-		}
-	}
-
-	protected void returnInputs(boolean bl) {
-		AbstractRecipeScreenHandler<?> handler = RecipeUnlocker.mc.player.playerScreenHandler;
-		for(int i = 0; i < handler.getCraftingSlotCount(); ++i) {
-			if (handler.canInsertIntoSlot(i)) {
-				ItemStack itemStack = handler.getSlot(i).getStack().copy();
-				RecipeUnlocker.mc.player.getInventory().offer(itemStack, false);
-				handler.getSlot(i).setStack(itemStack);
-			}
-		}
-
 		handler.clearCraftingSlots();
 	}
-	
+
+	protected void fillInputSlots(Recipe<C> recipe, boolean craftAll) {
+		IntArrayList intList;
+		int j;
+		boolean bl = handler.matches(recipe);
+		int i = matcher.countCrafts(recipe, null);
+		if (bl) {
+			for (j = 0; j < handler.getCraftingHeight() * handler.getCraftingWidth() + 1; ++j) {
+				ItemStack itemStack;
+				if (j == handler.getCraftingResultSlotIndex() || (itemStack = handler.getSlot(j).getStack()).isEmpty() || Math.min(i, itemStack.getMaxCount()) >= itemStack.getCount() + 1) continue;
+				return;
+			}
+		}
+		if (matcher.match(recipe, intList = new IntArrayList(), j = getAmountToFill(craftAll, i, bl))) {
+			int k = j;
+			for (int l : intList) {
+				int m = RecipeMatcher.getStackFromId(l).getMaxCount();
+				if (m >= k) continue;
+				k = m;
+			}
+			j = k;
+			if (matcher.match(recipe, intList, j)) {
+				returnInputs();
+				alignRecipeToGrid(handler.getCraftingWidth(), handler.getCraftingHeight(), handler.getCraftingResultSlotIndex(), recipe, intList.iterator(), j);
+			}
+		}
+	}
+
+	@Override
+	public void acceptAlignedInput(Iterator<Integer> inputs, int slot, int amount, int gridX, int gridY) {
+		Slot slot2 = handler.getSlot(slot);
+		ItemStack itemStack = RecipeMatcher.getStackFromId(inputs.next());
+		if (!itemStack.isEmpty()) {
+			for (int i = 0; i < amount; ++i) {
+				fillInputSlot(slot2, itemStack);
+			}
+		}
+	}
+
 	protected int getAmountToFill(boolean craftAll, int limit, boolean recipeInCraftingSlots) {
-		AbstractRecipeScreenHandler<?> handler = RecipeUnlocker.mc.player.playerScreenHandler;
 		int i = 1;
 		if (craftAll) {
 			i = limit;
 		} else if (recipeInCraftingSlots) {
 			i = 64;
-
-			for(int j = 0; j < handler.getCraftingWidth() * handler.getCraftingHeight() + 1; ++j) {
-				if (j != handler.getCraftingResultSlotIndex()) {
-					ItemStack itemStack = handler.getSlot(j).getStack();
-					if (!itemStack.isEmpty() && i > itemStack.getCount()) {
-						i = itemStack.getCount();
-					}
-				}
+			for (int j = 0; j < handler.getCraftingWidth() * handler.getCraftingHeight() + 1; ++j) {
+				ItemStack itemStack;
+				if (j == handler.getCraftingResultSlotIndex() || (itemStack = handler.getSlot(j).getStack()).isEmpty() || i <= itemStack.getCount()) continue;
+				i = itemStack.getCount();
 			}
-
 			if (i < 64) {
 				++i;
 			}
 		}
-
 		return i;
 	}
 
-	private void alignRecipeToGrid(int gridWidth, int gridHeight, int gridOutputSlot, Recipe<?> recipe, Iterator<?> inputs, int amount) {
-		int i = gridWidth;
-		int j = gridHeight;
-		if (recipe instanceof ShapedRecipe shapedRecipe) {
-            i = shapedRecipe.getWidth();
-			j = shapedRecipe.getHeight();
+	protected void fillInputSlot(Slot slot, ItemStack stack) {
+		int i = inventory.indexOf(stack);
+		if (i == -1) {
+			return;
 		}
+		ItemStack itemStack = inventory.getStack(i).copy();
+		if (itemStack.isEmpty()) {
+			return;
+		}
+		if (itemStack.getCount() > 1) {
+			inventory.removeStack(i, 1);
+		} else {
+			inventory.removeStack(i);
+		}
+		itemStack.setCount(1);
+		if (slot.getStack().isEmpty()) {
+			slot.setStack(itemStack);
+		} else {
+			slot.getStack().increment(1);
+		}
+	}
 
-		int shapedRecipe = 0;
-
-		for(int k = 0; k < gridHeight; ++k) {
-			if (shapedRecipe == gridOutputSlot) {
-				++shapedRecipe;
-			}
-
-			boolean bl = (float)j < (float)gridHeight / 2.0F;
-			int l = MathHelper.floor((float)gridHeight / 2.0F - (float)j / 2.0F);
-			if (bl && l > k) {
-				shapedRecipe += gridWidth;
-				++k;
-			}
-
-			for(int m = 0; m < gridWidth; ++m) {
-				if (!inputs.hasNext()) {
-					return;
-				}
-
-				bl = (float)i < (float)gridWidth / 2.0F;
-				l = MathHelper.floor((float)gridWidth / 2.0F - (float)i / 2.0F);
-				int n = i;
-				boolean bl2 = m < i;
-				if (bl) {
-					n = l + i;
-					bl2 = l <= m && m < l + i;
-				}
-
-				if (bl2) {
-					acceptAlignedInput(inputs, shapedRecipe, amount, k, m);
-				} else if (n == m) {
-					shapedRecipe += gridWidth - m;
+	private boolean canReturnInputs() {
+		ArrayList<ItemStack> list = Lists.newArrayList();
+		int i = getFreeInventorySlots();
+		for (int j = 0; j < handler.getCraftingWidth() * handler.getCraftingHeight() + 1; ++j) {
+			ItemStack itemStack;
+			if (j == handler.getCraftingResultSlotIndex() || (itemStack = handler.getSlot(j).getStack().copy()).isEmpty()) continue;
+			int k = inventory.getOccupiedSlotWithRoomForStack(itemStack);
+			if (k == -1 && list.size() <= i) {
+				for (ItemStack itemStack2 : list) {
+					if (!itemStack2.isItemEqual(itemStack) || itemStack2.getCount() == itemStack2.getMaxCount() || itemStack2.getCount() + itemStack.getCount() > itemStack2.getMaxCount()) continue;
+					itemStack2.increment(itemStack.getCount());
+					itemStack.setCount(0);
 					break;
 				}
-
-				++shapedRecipe;
-			}
-		}
-
-	}
-
-	private void acceptAlignedInput(final Iterator<?> inputs, final int slot, final int amount, final int gridX, final int gridY) {
-		AbstractRecipeScreenHandler<?> handler = RecipeUnlocker.mc.player.playerScreenHandler;
-		Slot slot2 = handler.getSlot(slot);
-		ItemStack itemStack = RecipeMatcher.getStackFromId((Integer)inputs.next());
-		if (!itemStack.isEmpty()) {
-			for(int i = 0; i < amount; ++i) {
-				fillInputSlot(slot2, itemStack);
-			}
-		}
-
-	}
-
-	protected void fillInputSlot(Slot slot, ItemStack stack) {
-		int i = RecipeUnlocker.mc.player.getInventory().indexOf(stack);
-		if (i != -1) {
-			ItemStack itemStack =  RecipeUnlocker.mc.player.getInventory().getStack(i).copy();
-			if (!itemStack.isEmpty()) {
-				if (itemStack.getCount() > 1) {
-					 RecipeUnlocker.mc.player.getInventory().removeStack(i, 1);
-				} else {
-					 RecipeUnlocker.mc.player.getInventory().removeStack(i);
+				if (itemStack.isEmpty()) continue;
+				if (list.size() < i) {
+					list.add(itemStack);
+					continue;
 				}
-
-				itemStack.setCount(1);
-				if (slot.getStack().isEmpty()) {
-					slot.setStack(itemStack);
-				} else {
-					slot.getStack().increment(1);
-				}
-
+				return false;
 			}
+			if (k != -1) continue;
+			return false;
 		}
+		return true;
 	}
 
+	private int getFreeInventorySlots() {
+		int i = 0;
+		for (ItemStack itemStack : inventory.main) {
+			if (!itemStack.isEmpty()) continue;
+			++i;
+		}
+		return i;
+	}
 }
