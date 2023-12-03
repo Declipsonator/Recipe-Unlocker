@@ -12,11 +12,14 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.recipe.Recipe;
+import net.minecraft.recipe.RecipeEntry;
 import net.minecraft.recipe.RecipeGridAligner;
 import net.minecraft.recipe.RecipeMatcher;
 import net.minecraft.screen.AbstractRecipeScreenHandler;
 import net.minecraft.screen.slot.Slot;
+import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -26,25 +29,17 @@ import java.util.Iterator;
 
 @Mixin(ClientPlayerInteractionManager.class)
 public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements RecipeGridAligner<Integer> {
+	@Unique
 	PlayerInventory inventory;
+	@Unique
 	AbstractRecipeScreenHandler<C> handler;
+	@Unique
 	RecipeMatcher matcher = new RecipeMatcher();
 	
 	@Inject(method = "clickRecipe", at = @At("HEAD"), cancellable = true)
-	public void clickedRecipe(int syncId, Recipe<?> recipe, boolean craftAll, CallbackInfo cir) {
-		if(!(RecipeUnlocker.mc.currentScreen instanceof HandledScreen<?> handledScreen && RecipeBookRecipes.isCached(recipe) && RecipeUnlocker.mc.player != null)) return;
-		RecipeBookWidget widget = null;
-		if (handledScreen instanceof InventoryScreen playerScreen) {
-			widget = playerScreen.getRecipeBookWidget();
-		} else if(handledScreen instanceof CraftingScreen craftingScreen) {
-			widget = craftingScreen.getRecipeBookWidget();
-		} else if(handledScreen instanceof FurnaceScreen furnaceScreen) {
-			widget = furnaceScreen.getRecipeBookWidget();
-		} else if(handledScreen instanceof SmokerScreen smokerScreen) {
-			widget = smokerScreen.getRecipeBookWidget();
-		} else if(handledScreen instanceof BlastFurnaceScreen blastFurnaceScreen) {
-			widget = blastFurnaceScreen.getRecipeBookWidget();
-		}
+	public void clickedRecipe(int syncId, RecipeEntry<?> recipe, boolean craftAll, CallbackInfo ci) {
+		if(!(RecipeUnlocker.mc.currentScreen instanceof HandledScreen<?> handledScreen && RecipeBookRecipes.isCached(recipe.value()) && RecipeUnlocker.mc.player != null)) return;
+		RecipeBookWidget widget = getRecipeBookWidget(handledScreen);
 		if(widget == null) return;
 		widget.reset();
 
@@ -60,8 +55,8 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		matcher.clear();
 		entity.getInventory().populateRecipeFinder(matcher);
 		handler.populateRecipeFinder(matcher);
-		if (matcher.match(recipe, null)) {
-			fillInputSlots((Recipe<C>) recipe, craftAll);
+		if (matcher.match(recipe.value(), null)) {
+			fillInputSlots(recipe, craftAll);
 
 		} else {
 			returnInputs();
@@ -70,7 +65,25 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		}
 		entity.getInventory().markDirty();
 
-		cir.cancel();
+		ci.cancel();
+	}
+
+	@Unique
+	@Nullable
+	private static RecipeBookWidget getRecipeBookWidget(HandledScreen<?> handledScreen) {
+		RecipeBookWidget widget = null;
+		if (handledScreen instanceof InventoryScreen playerScreen) {
+			widget = playerScreen.getRecipeBookWidget();
+		} else if(handledScreen instanceof CraftingScreen craftingScreen) {
+			widget = craftingScreen.getRecipeBookWidget();
+		} else if(handledScreen instanceof FurnaceScreen furnaceScreen) {
+			widget = furnaceScreen.getRecipeBookWidget();
+		} else if(handledScreen instanceof SmokerScreen smokerScreen) {
+			widget = smokerScreen.getRecipeBookWidget();
+		} else if(handledScreen instanceof BlastFurnaceScreen blastFurnaceScreen) {
+			widget = blastFurnaceScreen.getRecipeBookWidget();
+		}
+		return widget;
 	}
 
 	/*
@@ -79,6 +92,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 	 */
 	
 
+	@Unique
 	protected void returnInputs() {
 		for (int i = 0; i < handler.getCraftingSlotCount(); ++i) {
 			if (!handler.canInsertIntoSlot(i)) continue;
@@ -89,10 +103,11 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		handler.clearCraftingSlots();
 	}
 
-	protected void fillInputSlots(Recipe<C> recipe, boolean craftAll) {
+	@Unique
+	protected void fillInputSlots(RecipeEntry<?> recipe, boolean craftAll) {
 		IntArrayList intList;
 		int j;
-		boolean bl = handler.matches(recipe);
+		boolean bl = handler.matches((RecipeEntry<? extends Recipe<C>>) recipe);
 		int i = matcher.countCrafts(recipe, null);
 		if (bl) {
 			for (j = 0; j < handler.getCraftingHeight() * handler.getCraftingWidth() + 1; ++j) {
@@ -101,7 +116,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 				return;
 			}
 		}
-		if (matcher.match(recipe, intList = new IntArrayList(), j = getAmountToFill(craftAll, i, bl))) {
+		if (matcher.match(recipe.value(), intList = new IntArrayList(), j = getAmountToFill(craftAll, i, bl))) {
 			int k = j;
 			for (int l : intList) {
 				int m = RecipeMatcher.getStackFromId(l).getMaxCount();
@@ -109,7 +124,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 				k = m;
 			}
 			j = k;
-			if (matcher.match(recipe, intList, j)) {
+			if (matcher.match(recipe.value(), intList, j)) {
 				returnInputs();
 				alignRecipeToGrid(handler.getCraftingWidth(), handler.getCraftingHeight(), handler.getCraftingResultSlotIndex(), recipe, intList.iterator(), j);
 			}
@@ -127,6 +142,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		}
 	}
 
+	@Unique
 	protected int getAmountToFill(boolean craftAll, int limit, boolean recipeInCraftingSlots) {
 		int i = 1;
 		if (craftAll) {
@@ -145,6 +161,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		return i;
 	}
 
+	@Unique
 	protected void fillInputSlot(Slot slot, ItemStack stack) {
 		int i = inventory.indexOf(stack);
 		if (i == -1) {
@@ -167,6 +184,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		}
 	}
 
+	@Unique
 	private boolean canReturnInputs() {
 		ArrayList<ItemStack> list = Lists.newArrayList();
 		int i = getFreeInventorySlots();
@@ -176,7 +194,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 			int k = inventory.getOccupiedSlotWithRoomForStack(itemStack);
 			if (k == -1 && list.size() <= i) {
 				for (ItemStack itemStack2 : list) {
-					if (!itemStack2.isItemEqual(itemStack) || itemStack2.getCount() == itemStack2.getMaxCount() || itemStack2.getCount() + itemStack.getCount() > itemStack2.getMaxCount()) continue;
+					if (itemStack2.getItem() != itemStack.getItem() || itemStack2.getCount() == itemStack2.getMaxCount() || itemStack2.getCount() + itemStack.getCount() > itemStack2.getMaxCount()) continue;
 					itemStack2.increment(itemStack.getCount());
 					itemStack.setCount(0);
 					break;
@@ -194,6 +212,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		return true;
 	}
 
+	@Unique
 	private int getFreeInventorySlots() {
 		int i = 0;
 		for (ItemStack itemStack : inventory.main) {

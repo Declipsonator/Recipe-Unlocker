@@ -1,6 +1,7 @@
 package me.declipsonator.recipeunlocker.util;
 
 import net.minecraft.recipe.Recipe;
+import net.minecraft.recipe.RecipeEntry;
 
 import java.util.HashSet;
 import java.util.List;
@@ -13,15 +14,15 @@ public class RecipeBookRecipes {
 		return RECIPES.contains(recipe);
 	}
 
-	public static void setRecipes(List<Recipe<?>> recipeCache) {
+	public static void setRecipes(List<RecipeEntry<?>> recipeCache) {
 		recipeCache.forEach(RecipeBookRecipes::addRecipe);
 	}
 
-	public static void addRecipe(Recipe<?> recipe) {
-		RECIPES.add(recipe);
+	public static void addRecipe(RecipeEntry<?> recipe) {
+		RECIPES.add(recipe.value());
 	}
 
-	public static void removeRecipeFromCache(Recipe<?> recipe) {
-		RECIPES.remove(recipe);
+	public static void removeRecipeFromCache(RecipeEntry<?> recipe) {
+		RECIPES.remove(recipe.value());
 	}
 }
