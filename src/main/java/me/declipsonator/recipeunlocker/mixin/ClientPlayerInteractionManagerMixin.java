@@ -4,6 +4,7 @@ import com.google.common.collect.Lists;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntListIterator;
 import me.declipsonator.recipeunlocker.RecipeUnlocker;
+import me.declipsonator.recipeunlocker.util.MoveUtils;
 import me.declipsonator.recipeunlocker.util.RecipeBookRecipes;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.*;
@@ -19,7 +20,6 @@ import net.minecraft.recipe.RecipeMatcher;
 import net.minecraft.recipe.input.RecipeInput;
 import net.minecraft.screen.AbstractRecipeScreenHandler;
 import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -33,8 +33,6 @@ import java.util.ArrayList;
 public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput, R extends Recipe<I>> implements RecipeGridAligner<Integer>  {
 	@Unique
 	PlayerInventory inventory;
-	@Unique
-	PlayerInventory beforeInventory;
 	@Unique
 	AbstractRecipeScreenHandler<I, R> handler;
 	@Unique
@@ -127,14 +125,13 @@ public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput,
 		IntArrayList intList = new IntArrayList();
 		if (matcher.match(recipe.value(), intList, j)) {
 			int k = j;
-			IntListIterator intListIterator = intList.iterator();
-			while (intListIterator.hasNext()) {
-				int m;
-				int l = intListIterator.next();
-				ItemStack itemStack2 = RecipeMatcher.getStackFromId(l);
-				if (itemStack2.isEmpty() || (m = itemStack2.getMaxCount()) >= k) continue;
-				k = m;
-			}
+            for (Integer integer : intList) {
+                int m;
+                int l = integer;
+                ItemStack itemStack2 = RecipeMatcher.getStackFromId(l);
+                if (itemStack2.isEmpty() || (m = itemStack2.getMaxCount()) >= k) continue;
+                k = m;
+            }
 			j = k;
 			if (matcher.match(recipe.value(), intList, j)) {
 				returnInputs();
@@ -185,23 +182,22 @@ public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput,
 		}
 		ItemStack itemStack = inventory.getStack(j);
 		if (i < itemStack.getCount()) {
-			inventory.removeStack(j, i);
-//			handler.onSlotClick(j, 0, SlotActionType.SWAP, RecipeUnlocker.mc.player);
+//			inventory.removeStack(j, i);
+			MoveUtils.pickup(j, i);
 
 			k = i;
 		} else {
-			inventory.removeStack(j);
-//			handler.onSlotClick(j, 0, SlotActionType.SWAP, RecipeUnlocker.mc.player);
+//			inventory.removeStack(j);
+			MoveUtils.pickup(j, itemStack.getCount());
 			k = itemStack.getCount();
+
 		}
 		if (slot.getStack().isEmpty()) {
-			slot.setStackNoCallbacks(itemStack.copyWithCount(k));
-//			for(int l = 0; l < k; l++) {
-//				handler.onSlotClick(slot.id, 1, SlotActionType.SWAP, RecipeUnlocker.mc.player);
-//			}
-
+//			slot.setStackNoCallbacks(itemStack.copyWithCount(k));
+			MoveUtils.putId(slot.id, k);
 		} else {
-			slot.getStack().increment(k);
+//			slot.getStack().increment(k);
+			MoveUtils.put(slot.id, k);
 		}
 		return i - k;
 	}
