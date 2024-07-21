@@ -80,10 +80,11 @@ public class MoveUtils {
         }
     }
 
-    public static void put(int index, int amount) {
-        int id = indexToId(index);
-        putId(id, amount);
+
+    public static void putAllId(int id) {
+        click(id, 0);
     }
+
 
 
     private static void click(int id, int button) {

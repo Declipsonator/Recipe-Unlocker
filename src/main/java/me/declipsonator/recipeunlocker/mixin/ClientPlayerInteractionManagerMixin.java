@@ -20,8 +20,11 @@ import net.minecraft.recipe.RecipeMatcher;
 import net.minecraft.recipe.input.RecipeInput;
 import net.minecraft.screen.AbstractRecipeScreenHandler;
 import net.minecraft.screen.slot.Slot;
+import net.minecraft.screen.slot.SlotActionType;
 import org.jetbrains.annotations.Nullable;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -29,8 +32,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
 
+import static me.declipsonator.recipeunlocker.RecipeUnlocker.mc;
+
 @Mixin(ClientPlayerInteractionManager.class)
 public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput, R extends Recipe<I>> implements RecipeGridAligner<Integer>  {
+	@Shadow @Final private MinecraftClient client;
 	@Unique
 	PlayerInventory inventory;
 	@Unique
@@ -49,10 +55,10 @@ public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput,
 
 		ClientPlayerEntity entity = RecipeUnlocker.mc.player;
 
+
 		im = MinecraftClient.getInstance().interactionManager;
 		handler = (AbstractRecipeScreenHandler<I, R>) RecipeUnlocker.mc.player.currentScreenHandler;
 		inventory = entity.getInventory();
-		handler.clearCraftingSlots();
 
 		if (!canReturnInputs() && !entity.isCreative()) {
 			return;
@@ -102,9 +108,13 @@ public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput,
 	protected void returnInputs() {
 		for (int i = 0; i < handler.getCraftingSlotCount(); ++i) {
 			if (!handler.canInsertIntoSlot(i)) continue;
-			ItemStack itemStack = handler.getSlot(i).getStack().copy();
-			inventory.offer(itemStack, false);
-			handler.getSlot(i).setStackNoCallbacks(itemStack);
+//			ItemStack itemStack = handler.getSlot(i).getStack().copy();
+//			inventory.offer(itemStack, false);
+//			handler.getSlot(i).setStackNoCallbacks(itemStack);
+			mc.interactionManager.clickSlot(mc.player.currentScreenHandler.syncId, handler.getSlot(i).id, 0, SlotActionType.QUICK_MOVE, mc.player);
+			MoveUtils.pickupId(handler.getSlot(i).id, handler.getSlot(i).getStack().getCount());
+			mc.interactionManager.clickSlot(mc.player.currentScreenHandler.syncId, handler.getSlot(i).id, 0, SlotActionType.THROW, mc.player);
+
 		}
 		handler.clearCraftingSlots();
 	}
@@ -175,13 +185,16 @@ public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput,
 
 	@Unique
 	protected int fillInputSlot(Slot slot, ItemStack stack, int i) {
+		System.out.println(slot.id);
+
 		int k;
 		int j = inventory.indexOf(stack);
 		if (j == -1) {
 			return -1;
 		}
 		ItemStack itemStack = inventory.getStack(j);
-		if (i < itemStack.getCount()) {
+
+		if (i <= itemStack.getCount()) {
 //			inventory.removeStack(j, i);
 			MoveUtils.pickup(j, i);
 
@@ -189,15 +202,20 @@ public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput,
 		} else {
 //			inventory.removeStack(j);
 			MoveUtils.pickup(j, itemStack.getCount());
-			k = itemStack.getCount();
+			mc.interactionManager.clickSlot(mc.player.currentScreenHandler.syncId, j, 0, SlotActionType.PICKUP_ALL, mc.player);
+			System.out.println(" asdfas " + client.player.currentScreenHandler.getCursorStack().getCount());
+
+			MoveUtils.putId(slot.id, client.player.currentScreenHandler.getCursorStack().getCount() - i);
+			k = client.player.currentScreenHandler.getCursorStack().getCount();
 
 		}
+		System.out.println(client.player.currentScreenHandler.getCursorStack().getCount());
 		if (slot.getStack().isEmpty()) {
 //			slot.setStackNoCallbacks(itemStack.copyWithCount(k));
 			MoveUtils.putId(slot.id, k);
 		} else {
 //			slot.getStack().increment(k);
-			MoveUtils.put(slot.id, k);
+			MoveUtils.putId(slot.id, k - slot.getStack().getCount());
 		}
 		return i - k;
 	}
