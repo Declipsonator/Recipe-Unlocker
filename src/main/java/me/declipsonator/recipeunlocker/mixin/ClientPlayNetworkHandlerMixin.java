@@ -4,8 +4,8 @@ import me.declipsonator.recipeunlocker.RecipeUnlocker;
 import me.declipsonator.recipeunlocker.util.RecipeBookRecipes;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.recipebook.ClientRecipeBook;
+import net.minecraft.network.packet.s2c.play.ChangeUnlockedRecipesS2CPacket;
 import net.minecraft.network.packet.s2c.play.SynchronizeRecipesS2CPacket;
-import net.minecraft.network.packet.s2c.play.UnlockRecipesS2CPacket;
 import net.minecraft.recipe.RecipeManager;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Final;
@@ -31,7 +31,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 	}
 
 	@Inject(method = "onUnlockRecipes", at = @At("HEAD"))
-	private void unlockRecipes(UnlockRecipesS2CPacket packet, CallbackInfo cir) {
+	private void unlockRecipes(ChangeUnlockedRecipesS2CPacket packet, CallbackInfo ci) {
 		switch (packet.getAction()) {
 			case ADD, INIT -> {
 				for (Identifier identifier : packet.getRecipeIdsToChange()) {

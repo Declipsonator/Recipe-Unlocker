@@ -2,21 +2,24 @@ package me.declipsonator.recipeunlocker.mixin;
 
 import com.google.common.collect.Lists;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntListIterator;
 import me.declipsonator.recipeunlocker.RecipeUnlocker;
 import me.declipsonator.recipeunlocker.util.RecipeBookRecipes;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.*;
 import net.minecraft.client.gui.screen.recipebook.RecipeBookWidget;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
 import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.recipe.Recipe;
 import net.minecraft.recipe.RecipeEntry;
 import net.minecraft.recipe.RecipeGridAligner;
 import net.minecraft.recipe.RecipeMatcher;
+import net.minecraft.recipe.input.RecipeInput;
 import net.minecraft.screen.AbstractRecipeScreenHandler;
 import net.minecraft.screen.slot.Slot;
+import net.minecraft.screen.slot.SlotActionType;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -25,17 +28,20 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 
 @Mixin(ClientPlayerInteractionManager.class)
-public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements RecipeGridAligner<Integer> {
+public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput, R extends Recipe<I>> implements RecipeGridAligner<Integer>  {
 	@Unique
 	PlayerInventory inventory;
 	@Unique
-	AbstractRecipeScreenHandler<C> handler;
+	PlayerInventory beforeInventory;
+	@Unique
+	AbstractRecipeScreenHandler<I, R> handler;
 	@Unique
 	RecipeMatcher matcher = new RecipeMatcher();
-	
+	@Unique
+	ClientPlayerInteractionManager im;
+
 	@Inject(method = "clickRecipe", at = @At("HEAD"), cancellable = true)
 	public void clickedRecipe(int syncId, RecipeEntry<?> recipe, boolean craftAll, CallbackInfo ci) {
 		if(!(RecipeUnlocker.mc.currentScreen instanceof HandledScreen<?> handledScreen && RecipeBookRecipes.isCached(recipe.value()) && RecipeUnlocker.mc.player != null)) return;
@@ -45,7 +51,8 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 
 		ClientPlayerEntity entity = RecipeUnlocker.mc.player;
 
-		handler = (AbstractRecipeScreenHandler<C>) RecipeUnlocker.mc.player.currentScreenHandler;
+		im = MinecraftClient.getInstance().interactionManager;
+		handler = (AbstractRecipeScreenHandler<I, R>) RecipeUnlocker.mc.player.currentScreenHandler;
 		inventory = entity.getInventory();
 		handler.clearCraftingSlots();
 
@@ -56,7 +63,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		entity.getInventory().populateRecipeFinder(matcher);
 		handler.populateRecipeFinder(matcher);
 		if (matcher.match(recipe.value(), null)) {
-			fillInputSlots(recipe, craftAll);
+			fillInputSlots((RecipeEntry<R>) recipe, craftAll);
 
 		} else {
 			returnInputs();
@@ -89,8 +96,9 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 	/*
 		The code below was pretty much copied from the server side
 		I couldn't interface with it by just referencing it or smth so I just pasted
+
+		From InputSlotFiller
 	 */
-	
 
 	@Unique
 	protected void returnInputs() {
@@ -98,16 +106,15 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 			if (!handler.canInsertIntoSlot(i)) continue;
 			ItemStack itemStack = handler.getSlot(i).getStack().copy();
 			inventory.offer(itemStack, false);
-			handler.getSlot(i).setStack(itemStack);
+			handler.getSlot(i).setStackNoCallbacks(itemStack);
 		}
 		handler.clearCraftingSlots();
 	}
 
 	@Unique
-	protected void fillInputSlots(RecipeEntry<?> recipe, boolean craftAll) {
-		IntArrayList intList;
+	protected void fillInputSlots(RecipeEntry<R> recipe, boolean craftAll) {
 		int j;
-		boolean bl = handler.matches((RecipeEntry<? extends Recipe<C>>) recipe);
+		boolean bl = handler.matches(recipe);
 		int i = matcher.countCrafts(recipe, null);
 		if (bl) {
 			for (j = 0; j < handler.getCraftingHeight() * handler.getCraftingWidth() + 1; ++j) {
@@ -116,11 +123,16 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 				return;
 			}
 		}
-		if (matcher.match(recipe.value(), intList = new IntArrayList(), j = getAmountToFill(craftAll, i, bl))) {
+		j = getAmountToFill(craftAll, i, bl);
+		IntArrayList intList = new IntArrayList();
+		if (matcher.match(recipe.value(), intList, j)) {
 			int k = j;
-			for (int l : intList) {
-				int m = RecipeMatcher.getStackFromId(l).getMaxCount();
-				if (m >= k) continue;
+			IntListIterator intListIterator = intList.iterator();
+			while (intListIterator.hasNext()) {
+				int m;
+				int l = intListIterator.next();
+				ItemStack itemStack2 = RecipeMatcher.getStackFromId(l);
+				if (itemStack2.isEmpty() || (m = itemStack2.getMaxCount()) >= k) continue;
 				k = m;
 			}
 			j = k;
@@ -132,13 +144,16 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 	}
 
 	@Override
-	public void acceptAlignedInput(Iterator<Integer> inputs, int slot, int amount, int gridX, int gridY) {
-		Slot slot2 = handler.getSlot(slot);
-		ItemStack itemStack = RecipeMatcher.getStackFromId(inputs.next());
-		if (!itemStack.isEmpty()) {
-			for (int i = 0; i < amount; ++i) {
-				fillInputSlot(slot2, itemStack);
-			}
+	public void acceptAlignedInput(Integer integer, int i, int j, int k, int l) {
+		Slot slot = handler.getSlot(i);
+		ItemStack itemStack = RecipeMatcher.getStackFromId(integer);
+		if (itemStack.isEmpty()) {
+			return;
+		}
+		int m = j;
+		while (m > 0) {
+			if ((m = fillInputSlot(slot, itemStack, m)) != -1) continue;
+			return;
 		}
 	}
 
@@ -148,13 +163,13 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 		if (craftAll) {
 			i = limit;
 		} else if (recipeInCraftingSlots) {
-			i = 64;
+			i = Integer.MAX_VALUE;
 			for (int j = 0; j < handler.getCraftingWidth() * handler.getCraftingHeight() + 1; ++j) {
 				ItemStack itemStack;
 				if (j == handler.getCraftingResultSlotIndex() || (itemStack = handler.getSlot(j).getStack()).isEmpty() || i <= itemStack.getCount()) continue;
 				i = itemStack.getCount();
 			}
-			if (i < 64) {
+			if (i != Integer.MAX_VALUE) {
 				++i;
 			}
 		}
@@ -162,26 +177,33 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 	}
 
 	@Unique
-	protected void fillInputSlot(Slot slot, ItemStack stack) {
-		int i = inventory.indexOf(stack);
-		if (i == -1) {
-			return;
+	protected int fillInputSlot(Slot slot, ItemStack stack, int i) {
+		int k;
+		int j = inventory.indexOf(stack);
+		if (j == -1) {
+			return -1;
 		}
-		ItemStack itemStack = inventory.getStack(i).copy();
-		if (itemStack.isEmpty()) {
-			return;
-		}
-		if (itemStack.getCount() > 1) {
-			inventory.removeStack(i, 1);
+		ItemStack itemStack = inventory.getStack(j);
+		if (i < itemStack.getCount()) {
+			inventory.removeStack(j, i);
+//			handler.onSlotClick(j, 0, SlotActionType.SWAP, RecipeUnlocker.mc.player);
+
+			k = i;
 		} else {
-			inventory.removeStack(i);
+			inventory.removeStack(j);
+//			handler.onSlotClick(j, 0, SlotActionType.SWAP, RecipeUnlocker.mc.player);
+			k = itemStack.getCount();
 		}
-		itemStack.setCount(1);
 		if (slot.getStack().isEmpty()) {
-			slot.setStack(itemStack);
+			slot.setStackNoCallbacks(itemStack.copyWithCount(k));
+//			for(int l = 0; l < k; l++) {
+//				handler.onSlotClick(slot.id, 1, SlotActionType.SWAP, RecipeUnlocker.mc.player);
+//			}
+
 		} else {
-			slot.getStack().increment(1);
+			slot.getStack().increment(k);
 		}
+		return i - k;
 	}
 
 	@Unique
@@ -194,7 +216,7 @@ public class ClientPlayerInteractionManagerMixin<C extends Inventory> implements
 			int k = inventory.getOccupiedSlotWithRoomForStack(itemStack);
 			if (k == -1 && list.size() <= i) {
 				for (ItemStack itemStack2 : list) {
-					if (itemStack2.getItem() != itemStack.getItem() || itemStack2.getCount() == itemStack2.getMaxCount() || itemStack2.getCount() + itemStack.getCount() > itemStack2.getMaxCount()) continue;
+					if (!ItemStack.areItemsEqual(itemStack2, itemStack) || itemStack2.getCount() == itemStack2.getMaxCount() || itemStack2.getCount() + itemStack.getCount() > itemStack2.getMaxCount()) continue;
 					itemStack2.increment(itemStack.getCount());
 					itemStack.setCount(0);
 					break;
