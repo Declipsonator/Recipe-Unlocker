@@ -2,7 +2,6 @@ package me.declipsonator.recipeunlocker.mixin;
 
 import com.google.common.collect.Lists;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
-import it.unimi.dsi.fastutil.ints.IntListIterator;
 import me.declipsonator.recipeunlocker.RecipeUnlocker;
 import me.declipsonator.recipeunlocker.util.MoveUtils;
 import me.declipsonator.recipeunlocker.util.RecipeBookRecipes;
@@ -185,37 +184,44 @@ public abstract class ClientPlayerInteractionManagerMixin<I extends RecipeInput,
 
 	@Unique
 	protected int fillInputSlot(Slot slot, ItemStack stack, int i) {
-		System.out.println(slot.id);
 
 		int k;
-		int j = inventory.indexOf(stack);
-		if (j == -1) {
-			return -1;
+		int max = -1;
+		int itemStackSlot = 0;
+
+		for (int p = 0; p < 36; p++) {
+			if (inventory.getStack(p).isEmpty()) {
+				continue;
+			}
+			if (inventory.getStack(p).getItem() == stack.getItem()) {
+				if (inventory.getStack(p).getCount() > max) {
+					max = inventory.getStack(p).getCount();
+					itemStackSlot = p;
+				}
+			}
 		}
-		ItemStack itemStack = inventory.getStack(j);
+
+		ItemStack itemStack = inventory.getStack(itemStackSlot);
+
 
 		if (i <= itemStack.getCount()) {
 //			inventory.removeStack(j, i);
-			MoveUtils.pickup(j, i);
+			MoveUtils.pickup(itemStackSlot, i);
 
 			k = i;
 		} else {
 //			inventory.removeStack(j);
-			MoveUtils.pickup(j, itemStack.getCount());
-			mc.interactionManager.clickSlot(mc.player.currentScreenHandler.syncId, j, 0, SlotActionType.PICKUP_ALL, mc.player);
-			System.out.println(" asdfas " + client.player.currentScreenHandler.getCursorStack().getCount());
-
-			MoveUtils.putId(slot.id, client.player.currentScreenHandler.getCursorStack().getCount() - i);
+			MoveUtils.pickupAll(itemStackSlot);
 			k = client.player.currentScreenHandler.getCursorStack().getCount();
 
 		}
-		System.out.println(client.player.currentScreenHandler.getCursorStack().getCount());
 		if (slot.getStack().isEmpty()) {
 //			slot.setStackNoCallbacks(itemStack.copyWithCount(k));
 			MoveUtils.putId(slot.id, k);
 		} else {
 //			slot.getStack().increment(k);
-			MoveUtils.putId(slot.id, k - slot.getStack().getCount());
+			MoveUtils.putAllId(slot.id);
+
 		}
 		return i - k;
 	}

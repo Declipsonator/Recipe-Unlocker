@@ -62,7 +62,8 @@ public class MoveUtils {
 
 
     public static void pickupId(int id, int amount) {
-        click(id, 0);
+        if(amount <= mc.player.currentScreenHandler.getSlot(id).getStack().getCount() / 2) click(id, 1);
+        else click(id, 0);
         int amountHeld = mc.player.currentScreenHandler.getCursorStack().getCount();
         for (int i = 0; i < amountHeld - amount; i++) {
             click(id, 1);
@@ -72,6 +73,11 @@ public class MoveUtils {
     public static void pickup(int index, int amount) {
         int id = indexToId(index);
         pickupId(id, amount);
+    }
+
+    public static void pickupAll(int index) {
+        int id = indexToId(index);
+        click(id, 0);
     }
 
     public static void putId(int id, int amount) {
